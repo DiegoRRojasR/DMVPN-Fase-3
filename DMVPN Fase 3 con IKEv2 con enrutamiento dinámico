@@ -1,0 +1,318 @@
+1. Configuración de las PCs
+
+PC-HUB
+
+ip 10.9.20.10/24 10.9.20.1
+
+PC-A
+
+ip 10.9.28.10/24 10.9.28.1
+
+PC-B
+
+ip 10.9.29.10/24 10.9.29.1
+
+
+-------------------------------------------------------
+
+Configuración del ISP
+
+enable
+conf t
+hostname ISP1
+no ip domain-lookup
+
+interface g0/0
+ ip address 172.16.9.10 255.255.255.252
+ no shutdown
+
+interface g0/1
+ ip address 172.16.9.14 255.255.255.252
+ no shutdown
+
+interface g0/2
+ ip address 172.16.9.18 255.255.255.252
+ no shutdown
+
+end
+wr mem
+
+-------------------------------------------------------
+
+Configuración base del HUB
+
+enable
+conf t
+hostname R-HUB
+no ip domain-lookup
+
+interface g0/0
+ ip address 172.16.9.9 255.255.255.252
+ no shutdown
+
+interface g0/1
+ ip address 10.9.20.1 255.255.255.0
+ no shutdown
+
+ip route 0.0.0.0 0.0.0.0 172.16.9.10
+
+end
+wr mem
+
+-------------------------------------------------------
+
+Configuración base de SPOKE-A
+
+enable
+conf t
+hostname SPOKE-A
+no ip domain-lookup
+
+interface g0/0
+ ip address 172.16.9.13 255.255.255.252
+ no shutdown
+
+interface g0/1
+ ip address 10.9.28.1 255.255.255.0
+ no shutdown
+
+ip route 0.0.0.0 0.0.0.0 172.16.9.14
+
+end
+wr mem
+
+-------------------------------------------------------
+
+Configuración base de SPOKE-B
+
+enable
+conf t
+hostname SPOKE-B
+no ip domain-lookup
+
+interface g0/0
+ ip address 172.16.9.17 255.255.255.252
+ no shutdown
+
+interface g0/1
+ ip address 10.9.29.1 255.255.255.0
+ no shutdown
+
+ip route 0.0.0.0 0.0.0.0 172.16.9.18
+
+end
+wr mem
+
+-------------------------------------------------------
+
+Configuración (HUB)
+
+conf t
+hostname R-HUB
+no ip domain-lookup
+
+crypto ikev2 proposal IKEV2-PROP
+ encryption aes-cbc-256
+ integrity sha256
+ group 14
+
+crypto ikev2 policy IKEV2-POL
+ proposal IKEV2-PROP
+
+crypto ikev2 keyring KR
+ peer ANY
+  address 0.0.0.0 0.0.0.0
+  pre-shared-key C1sco-0918
+
+crypto ikev2 profile IKEV2-PROF
+ match identity remote address 0.0.0.0
+ authentication local pre-share
+ authentication remote pre-share
+ keyring local KR
+
+crypto ipsec transform-set TS esp-aes 256 esp-sha256-hmac
+ mode transport
+
+crypto ipsec profile DMVPN-PROF
+ set transform-set TS
+ set ikev2-profile IKEV2-PROF
+
+interface Tunnel200
+ ip address 10.201.9.1 255.255.255.0
+ no ip redirects
+ ip nhrp authentication NHRP0918
+ ip nhrp network-id 200
+ ip nhrp redirect
+ ip ospf network point-to-multipoint
+ ip ospf mtu-ignore
+ tunnel source g0/0
+ tunnel mode gre multipoint
+ tunnel key 200
+ tunnel protection ipsec profile DMVPN-PROF
+
+router ospf 200
+ network 10.201.9.0 0.0.0.255 area 0
+ network 10.9.20.0 0.0.0.255 area 0
+end
+
+conf t
+interface Tunnel200
+ ip nhrp map multicast dynamic
+
+end
+wr mem
+
+-------------------------------------------------------
+
+Configuración IKEv2 (SPOKE-A)
+
+conf t
+crypto ikev2 proposal IKEV2-PROP
+ encryption aes-cbc-256
+ integrity sha256
+ group 14
+
+crypto ikev2 policy IKEV2-POL
+ proposal IKEV2-PROP
+
+crypto ikev2 keyring KR
+ peer HUB
+  address 172.16.9.9
+  pre-shared-key C1sco-0918
+
+crypto ikev2 profile IKEV2-PROF
+ match identity remote address 172.16.9.9 255.255.255.255
+ authentication local pre-share
+ authentication remote pre-share
+ keyring local KR
+
+-------------------------------------------------------
+
+IPsec (SPOKE-A)
+
+crypto ipsec transform-set TS esp-aes 256 esp-sha256-hmac
+ mode transport
+
+crypto ipsec profile DMVPN-PROF
+ set transform-set TS
+ set ikev2-profile IKEV2-PROF
+
+-------------------------------------------------------
+
+Túnel DMVPN Fase 3 (SPOKE-A)
+
+interface Tunnel200
+ ip address 10.201.9.11 255.255.255.0
+ no ip redirects
+ ip nhrp authentication NHRP0918
+ ip nhrp network-id 200
+ ip nhrp nhs 10.201.9.1
+ ip nhrp map 10.201.9.1 172.16.9.9
+ ip nhrp map multicast 172.16.9.9
+ ip nhrp shortcut
+ tunnel source g0/0
+ tunnel mode gre multipoint
+ tunnel key 200
+ tunnel protection ipsec profile DMVPN-PROF
+
+-------------------------------------------------------
+
+OSPF (SPOKE-A)
+
+router ospf 200
+ network 10.201.9.0 0.0.0.255 area 0
+ network 10.9.28.0 0.0.0.255 area 0
+
+end
+conf t
+interface Tunnel200
+ ip ospf network point-to-multipoint
+ ip ospf mtu-ignore
+end
+wr mem
+
+-------------------------------------------------------
+
+SPOKE-B DMVPN Fase 3 con IKEv2 + OSPF
+
+enable
+conf t
+hostname SPOKE-B
+no ip domain-lookup
+
+interface g0/0
+ ip address 172.16.9.17 255.255.255.252
+ no shutdown
+
+interface g0/1
+ ip address 10.9.29.1 255.255.255.0
+ no shutdown
+
+ip route 0.0.0.0 0.0.0.0 172.16.9.18
+
+crypto ikev2 proposal IKEV2-PROP
+ encryption aes-cbc-256
+ integrity sha256
+ group 14
+
+crypto ikev2 policy IKEV2-POL
+ proposal IKEV2-PROP
+
+crypto ikev2 keyring KR
+ peer HUB
+  address 172.16.9.9
+  pre-shared-key C1sco-0918
+
+crypto ikev2 profile IKEV2-PROF
+ match identity remote address 172.16.9.9 255.255.255.255
+ authentication local pre-share
+ authentication remote pre-share
+ keyring local KR
+
+crypto ipsec transform-set TS esp-aes 256 esp-sha256-hmac
+ mode transport
+
+crypto ipsec profile DMVPN-PROF
+ set transform-set TS
+ set ikev2-profile IKEV2-PROF
+
+interface Tunnel200
+ ip address 10.201.9.12 255.255.255.0
+ no ip redirects
+ ip nhrp authentication NHRP0918
+ ip nhrp network-id 200
+ ip nhrp nhs 10.201.9.1
+ ip nhrp map 10.201.9.1 172.16.9.9
+ ip nhrp map multicast 172.16.9.9
+ ip nhrp shortcut
+ tunnel source g0/0
+ tunnel mode gre multipoint
+ tunnel key 200
+ tunnel protection ipsec profile DMVPN-PROF
+
+router ospf 200
+ network 10.201.9.0 0.0.0.255 area 0
+ network 10.9.29.0 0.0.0.255 area 0
+
+end
+
+conf t
+interface Tunnel200
+ ip ospf network point-to-multipoint
+ ip ospf mtu-ignore
+end
+
+wr mem
+
+-------------------------------------------------------
+
+Verificaciones (HUB)
+
+show dmvpn
+show ip nhrp
+show crypto ikev2 sa
+show crypto ipsec sa
+show ip ospf neighbor
+show ip route
+
+-------------------------------------------------------
